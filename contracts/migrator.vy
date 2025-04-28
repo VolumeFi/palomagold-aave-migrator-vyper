@@ -96,7 +96,7 @@ event UpdateServiceFee:
     new_service_fee: uint256
 
 @deploy
-def __init__(_compass: address, _weth: address, _router: address, _pool: address, _usdc: address, _gold_wallet: address, _refund_wallet: address, _gas_fee: uint256, _service_fee_collector: address, _service_fee: uint256, pysc_blueprint: address):
+def __init__(_compass: address, _weth: address, _router: address, _pool: address, _usdc: address, _gold_wallet: address, _refund_wallet: address, _gas_fee: uint256, _service_fee_collector: address, _service_fee: uint256):
     self.compass = _compass
     self.refund_wallet = _refund_wallet
     self.gas_fee = _gas_fee
@@ -170,7 +170,15 @@ def migrate_atoken_to_palomagold(a_asset: address, swap_info: SwapInfo):
     log Migrated(sender=msg.sender, usdc_amount=_amount)
 
 @external
+@payable
 def withdraw(amount: uint256):
+    _gas_fee: uint256 = self.gas_fee
+    _value: uint256 = msg.value
+    if _gas_fee > 0:
+        _value -= _gas_fee
+        send(self.refund_wallet, _gas_fee)
+    if _value > 0:
+        send(msg.sender, _value)
     _pagld: address = self.pagld
     self._safe_transfer_from(_pagld, msg.sender, self, amount)
     extcall Compass(self.compass).send_token_to_paloma(_pagld, self.paloma, amount)
