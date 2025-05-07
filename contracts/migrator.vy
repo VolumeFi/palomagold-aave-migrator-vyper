@@ -1,4 +1,4 @@
-#pragma version 0.4.1
+#pragma version 0.4.0
 #pragma optimize gas
 #pragma evm-version cancun
 """
@@ -47,8 +47,8 @@ Router: public(immutable(address))
 Pool: public(immutable(address))
 USDC: public(immutable(address))
 GoldWallet: public(immutable(address))
+pagld: public(immutable(address))
 
-pagld: public(address)
 compass: public(address)
 refund_wallet: public(address)
 gas_fee: public(uint256)
@@ -96,7 +96,7 @@ event UpdateServiceFee:
     new_service_fee: uint256
 
 @deploy
-def __init__(_compass: address, _weth: address, _router: address, _pool: address, _usdc: address, _gold_wallet: address, _refund_wallet: address, _gas_fee: uint256, _service_fee_collector: address, _service_fee: uint256):
+def __init__(_compass: address, _weth: address, _router: address, _pool: address, _usdc: address, _pagld: address, _gold_wallet: address, _refund_wallet: address, _gas_fee: uint256, _service_fee_collector: address, _service_fee: uint256):
     self.compass = _compass
     self.refund_wallet = _refund_wallet
     self.gas_fee = _gas_fee
@@ -108,11 +108,12 @@ def __init__(_compass: address, _weth: address, _router: address, _pool: address
     Pool = _pool
     USDC = _usdc
     GoldWallet = _gold_wallet
-    log UpdateCompass(old_compass=empty(address), new_compass=_compass)
-    log UpdateRefundWallet(old_refund_wallet=empty(address), new_refund_wallet=_refund_wallet)
-    log UpdateGasFee(old_gas_fee=0, new_gas_fee=_gas_fee)
-    log UpdateServiceFeeCollector(old_service_fee_collector=empty(address), new_service_fee_collector=_service_fee_collector)
-    log UpdateServiceFee(old_service_fee=0, new_service_fee=_service_fee)
+    pagld = _pagld
+    log UpdateCompass(empty(address), _compass)
+    log UpdateRefundWallet(empty(address), _refund_wallet)
+    log UpdateGasFee(0, _gas_fee)
+    log UpdateServiceFeeCollector(empty(address), _service_fee_collector)
+    log UpdateServiceFee(0, _service_fee)
 
 @internal
 def _safe_approve(_token: address, _to: address, _value: uint256):
@@ -125,6 +126,11 @@ def _safe_transfer(_token: address, _to: address, _value: uint256):
 @internal
 def _safe_transfer_from(_token: address, _from: address, _to: address, _value: uint256):
     assert extcall ERC20(_token).transferFrom(_from, _to, _value, default_return_value=True), "Failed transferFrom"
+
+@external
+@view
+def usdc_balance() -> uint256:
+    return staticcall ERC20(USDC).balanceOf(self)
 
 @external
 @payable
@@ -167,7 +173,7 @@ def migrate_atoken_to_palomagold(a_asset: address, swap_info: SwapInfo):
         _amount -= _service_fee_amount
 
     self._safe_transfer(USDC, GoldWallet, _amount)
-    log Migrated(sender=msg.sender, usdc_amount=_amount)
+    log Migrated(msg.sender, _amount)
 
 @external
 @payable
@@ -179,12 +185,11 @@ def withdraw(amount: uint256):
         send(self.refund_wallet, _gas_fee)
     if _value > 0:
         send(msg.sender, _value)
-    _pagld: address = self.pagld
-    self._safe_transfer_from(_pagld, msg.sender, self, amount)
-    extcall Compass(self.compass).send_token_to_paloma(_pagld, self.paloma, amount)
+    self._safe_transfer_from(pagld, msg.sender, self, amount)
+    extcall Compass(self.compass).send_token_to_paloma(pagld, self.paloma, amount)
     nonce: uint256 = self.last_nonce
     self.last_nonce = nonce + 1
-    log Withdrawn(sender=msg.sender, pagld_amount=amount, nonce=nonce)
+    log Withdrawn(msg.sender, amount, nonce)
 
 @external
 def release(recipient: address, amount: uint256, nonce: uint256):
@@ -192,7 +197,7 @@ def release(recipient: address, amount: uint256, nonce: uint256):
     assert not self.send_nonces[nonce], "Invalid nonce"
     self._safe_transfer(USDC, recipient, amount)
     self.send_nonces[nonce] = True
-    log Released(recipient=recipient, amount=amount, nonce=nonce)
+    log Released(recipient, amount, nonce)
 
 @internal
 def _paloma_check():
@@ -205,35 +210,35 @@ def update_compass(new_compass: address):
     assert msg.sender == _compass, "Not compass"
     assert not staticcall Compass(_compass).slc_switch(), "SLC is unavailable"
     self.compass = new_compass
-    log UpdateCompass(old_compass=msg.sender, new_compass=new_compass)
+    log UpdateCompass(msg.sender, new_compass)
 
 @external
 def set_paloma():
     assert msg.sender == self.compass and self.paloma == empty(bytes32) and len(msg.data) == 36, "Invalid"
     _paloma: bytes32 = convert(slice(msg.data, 4, 32), bytes32)
     self.paloma = _paloma
-    log SetPaloma(paloma=_paloma)
+    log SetPaloma(_paloma)
 
 @external
 def update_refund_wallet(new_refund_wallet: address):
     self._paloma_check()
     old_refund_wallet: address = self.refund_wallet
     self.refund_wallet = new_refund_wallet
-    log UpdateRefundWallet(old_refund_wallet=old_refund_wallet, new_refund_wallet=new_refund_wallet)
+    log UpdateRefundWallet(old_refund_wallet, new_refund_wallet)
 
 @external
 def update_gas_fee(new_gas_fee: uint256):
     self._paloma_check()
     old_gas_fee: uint256 = self.gas_fee
     self.gas_fee = new_gas_fee
-    log UpdateGasFee(old_gas_fee=old_gas_fee, new_gas_fee=new_gas_fee)
+    log UpdateGasFee(old_gas_fee, new_gas_fee)
 
 @external
 def update_service_fee_collector(new_service_fee_collector: address):
     self._paloma_check()
     old_service_fee_collector: address = self.service_fee_collector
     self.service_fee_collector = new_service_fee_collector
-    log UpdateServiceFeeCollector(old_service_fee_collector=old_service_fee_collector, new_service_fee_collector=new_service_fee_collector)
+    log UpdateServiceFeeCollector(old_service_fee_collector, new_service_fee_collector)
 
 @external
 def update_service_fee(new_service_fee: uint256):
@@ -241,7 +246,7 @@ def update_service_fee(new_service_fee: uint256):
     assert new_service_fee < DENOMINATOR, "Invalid service fee"
     old_service_fee: uint256 = self.service_fee
     self.service_fee = new_service_fee
-    log UpdateServiceFee(old_service_fee=old_service_fee, new_service_fee=new_service_fee)
+    log UpdateServiceFee(old_service_fee, new_service_fee)
 
 @external
 @payable
