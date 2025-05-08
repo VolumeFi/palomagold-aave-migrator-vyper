@@ -54,13 +54,15 @@ refund_wallet: public(address)
 gas_fee: public(uint256)
 service_fee_collector: public(address)
 service_fee: public(uint256)
-last_nonce: public(uint256)
+last_deposit_nonce: public(uint256)
+last_withdraw_nonce: public(uint256)
 send_nonces: public(HashMap[uint256, bool])
 paloma: public(bytes32)
 
 event Migrated:
     sender: address
     usdc_amount: uint256
+    nonce: uint256
 
 event Withdrawn:
     sender: address
@@ -173,7 +175,9 @@ def migrate_atoken_to_palomagold(a_asset: address, swap_info: SwapInfo):
         _amount -= _service_fee_amount
 
     self._safe_transfer(USDC, GoldWallet, _amount)
-    log Migrated(msg.sender, _amount)
+    nonce: uint256 = self.last_deposit_nonce
+    self.last_deposit_nonce = nonce + 1
+    log Migrated(msg.sender, _amount, nonce)
 
 @external
 @payable
@@ -187,8 +191,8 @@ def withdraw(amount: uint256):
         send(msg.sender, _value)
     self._safe_transfer_from(pagld, msg.sender, self, amount)
     extcall Compass(self.compass).send_token_to_paloma(pagld, self.paloma, amount)
-    nonce: uint256 = self.last_nonce
-    self.last_nonce = nonce + 1
+    nonce: uint256 = self.last_withdraw_nonce
+    self.last_withdraw_nonce = nonce + 1
     log Withdrawn(msg.sender, amount, nonce)
 
 @external
