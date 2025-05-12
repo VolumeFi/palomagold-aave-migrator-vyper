@@ -20,6 +20,9 @@ interface ERC20:
     def transfer(_to: address, _value: uint256) -> bool: nonpayable
     def transferFrom(_from: address, _to: address, _value: uint256) -> bool: nonpayable
 
+interface AToken:
+    def UNDERLYING_ASSET_ADDRESS() -> address: view
+
 interface Weth:
     def withdraw(amount: uint256): nonpayable
 
@@ -145,11 +148,12 @@ def migrate_atoken_to_palomagold(a_asset: address, swap_info: SwapInfo):
         send(self.refund_wallet, _gas_fee)
     if _value > 0:
         send(msg.sender, _value)
-
-    self._safe_transfer_from(a_asset, msg.sender, self, swap_info.amount)
-
-    extcall AAVEPoolV3(Pool).withdraw(a_asset, swap_info.amount, self)
     _amount: uint256 = swap_info.amount
+    self._safe_transfer_from(a_asset, msg.sender, self, _amount)
+    _asset: address = staticcall AToken(a_asset).UNDERLYING_ASSET_ADDRESS()
+
+    extcall AAVEPoolV3(Pool).withdraw(_asset, _amount, self)
+
     if swap_info.route[1] != empty(address):
         asset: address = swap_info.route[0]
         if asset != VETH:
